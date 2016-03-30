@@ -102,6 +102,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    }
 
    PTF("#include <time.h>\n");
+   PTF("#include <stdio.h>\n"); // ~IMP1: for using PUTS for debugging.
    PTF("#include \"debug.h\"\n");
    PTF("#include \"graph.h\"\n");
    PTF("#include \"graphStacks.h\"\n");
@@ -130,6 +131,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTF("}\n\n");
 
    PTF("Graph *host = NULL;\n");
+   
    PTF("int *node_map = NULL;\n\n");
 
    /* Print the function that builds the host graph through the host graph parser. */
@@ -169,11 +171,24 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("}\n", 3);
    PTF("}\n\n");
    
+   PTF("void finalise(FILE *output_file)\n");
+   PTF("{\n");
+   PTF("   printGraph(host, output_file);\n");
+   PTF("   printf(\"Output graph saved to file gp2.output\\n\");\n");
+   PTF("   garbageCollect();\n");
+   //PTF("   printf(\"Graph changes recorded: %%d\\n\", graph_change_count);\n");
+   PTF("   fclose(output_file);\n");
+   PTF("}\n\n");
+   
    PTF("bool success = true;\n\n");
 
    /* Open the runtime's main function and set up the execution environment. */
-   PTF("int main(void)\n");
+   PTF("int main(int argc, char *argv[])\n");
    PTF("{\n");
+   PTF("   printf(\"There are %%d args.\\n\", argc);\n");
+   PTFI("int starting_step = 10; // TODO read from file\n", 3); // ~IMP1: TODO read from file.
+   PTFI("int steps_to_run = 2; // TODO read from args\n", 3); // ~IMP1: TODO read from args.
+   PTFI("int current_step = 0;\n", 3); // ~IMP1: this is alwasy set to 0.
    PTFI("srand(time(NULL));\n", 3);
    PTFI("openLogFile(\"gp2.log\");\n", 3);
    #if defined GRAPH_TRACING || defined RULE_TRACING || defined BACKTRACK_TRACING
@@ -209,16 +224,12 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       GPDeclaration *decl = iterator->declaration;
       if(decl->type == MAIN_DECLARATION)
       {
-         CommandData initialData = {MAIN_BODY, false, -1, 3}; 
+         CommandData initialData = {MAIN_BODY, false, -1, 3};
          generateProgramCode(decl->main_program, initialData);
       }
       iterator = iterator->next;
    }
-   PTF("   printGraph(host, output_file);\n");
-   PTF("   printf(\"Output graph saved to file gp2.output\\n\");\n");
-   PTF("   garbageCollect();\n");
-   //PTF("   printf(\"Graph changes recorded: %%d\\n\", graph_change_count);\n");
-   PTF("   fclose(output_file);\n");
+   PTF("   finalise(output_file);\n");
    PTF("   return 0;\n");
    PTF("}\n\n");
    fclose(file);
@@ -284,9 +295,24 @@ static void generateMorphismCode(List *declarations, char type, bool first_call)
    else if(first_call) PTF("}\n\n");
 }
 
+static int depth = 0; // ~IMP1: debugging depth of commands
+static const char *command_strings[] = {
+    "COMMAND_SEQUENCE", "RULE_CALL", "RULE_SET_CALL", "PROCEDURE_CALL",
+    "IF_STATEMENT", "TRY_STATEMENT", "ALAP_STATEMENT", "PROGRAM_OR", 
+    "SKIP_STATEMENT", "FAIL_STATEMENT", "BREAK_STATEMENT"
+}; // DEBUGGING which command depths are what
 
 static void generateProgramCode(GPCommand *command, CommandData data)
 {
+   PTFI("// ~IMP1: Before %s (depth = %d).\n", 3, command_strings[command->type], ++depth);
+   // ~IMP1: TODO add the other leaf nodes to the following:
+   bool leaf_node = command->type == RULE_CALL ||
+                    command->type == RULE_SET_CALL; 
+   if (leaf_node) {
+      PTFI("if (current_step >= starting_step) { // ~IMP1: <leaf node>\n", data.indent);
+      data.indent = data.indent + 3;
+      PTFI("printf(\"step %%d.\\n\", current_step);\n", data.indent);
+   }
    switch(command->type)
    {
       case COMMAND_SEQUENCE:
@@ -405,6 +431,18 @@ static void generateProgramCode(GPCommand *command, CommandData data)
                         "%d at AST node %d\n", command->type, command->id);
            break;
    }
+   // <IMP1>
+   if (leaf_node) { 
+      data.indent = data.indent - 3;
+      PTFI("} // ~IMP1: </leaf node>\n", data.indent);
+      PTFI("current_step ++; // ~IMP1\n", data.indent);
+      PTFI("if (current_step == starting_step + steps_to_run) { // ~IMP1\n", data.indent);
+      PTFI("finalise(output_file); // ~IMP1\n", data.indent);
+      PTFI("return 0; // ~IMP1\n", data.indent);
+      PTFI("} // ~IMP1\n", data.indent);
+   }
+   PTFI("// ~IMP1: After %s (depth = %d).\n", 3, command_strings[command->type], depth--); 
+   // </IMP1>
 }
 
 /* That's a lot of arguments! What do they achieve?

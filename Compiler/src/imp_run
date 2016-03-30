@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Makes and runs GP2
+
+make clean
+make build
+make prog=~/cs/GP2/Compiler/programs/2colprog host=~/cs/GP2/Compiler/programs/graphs/2col-grid-10
+/tmp/gp2/GP2-run
