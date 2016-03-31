@@ -143,6 +143,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       PTF("}\n\n");
       return;
    }
+   
    PTFI("yyin = fopen(\"%s\", \"r\");\n", 3, host_file);
    PTFI("if(yyin == NULL)\n", 3);
    PTFI("{\n", 3);
@@ -171,8 +172,16 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("}\n", 3);
    PTF("}\n\n");
    
+   PTF("int current_step = 0;\n\n");
+   
    PTF("void finalise(FILE *output_file)\n");
    PTF("{\n");
+   PTF("   FILE *fp = fopen(\"%s/step.trace\", \"w\");\n", output_dir);
+   PTF("   if (fp != NULL) {\n");
+   PTF("      fprintf(fp, \"%%d\\n\", current_step);\n");
+   PTF("      printf(\"Trace step saved to file step.trace\\n\");\n");
+   PTF("   }\n");
+   PTF("   fclose(fp);");
    PTF("   printGraph(host, output_file);\n");
    PTF("   printf(\"Output graph saved to file gp2.output\\n\");\n");
    PTF("   garbageCollect();\n");
@@ -185,10 +194,25 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    /* Open the runtime's main function and set up the execution environment. */
    PTF("int main(int argc, char *argv[])\n");
    PTF("{\n");
-   PTF("   printf(\"There are %%d args.\\n\", argc);\n");
-   PTFI("int starting_step = 10; // TODO read from file\n", 3); // ~IMP1: TODO read from file.
-   PTFI("int steps_to_run = 2; // TODO read from args\n", 3); // ~IMP1: TODO read from args.
-   PTFI("int current_step = 0;\n", 3); // ~IMP1: this is alwasy set to 0.
+   
+   // Load current step
+   PTFI("int starting_step = 0;\n", 3);
+   PTFI("FILE *fp = fopen(\"%s/step.trace\", \"r\");\n", 3, output_dir);
+   PTFI("if (fp != NULL) {\n", 3);
+   PTFI("char buff[16];\n", 6);
+   PTFI("char *ptr;\n", 6);
+   PTFI("fgets(buff, 16, fp);\n", 6);
+   PTFI("starting_step = strtol(buff, &ptr, 10);\n", 6);
+   PTFI("} else { printf(\"couldn't find step.trace\\n\"); }\n", 3);
+   PTFI("fclose(fp);", 3);
+   
+   // Read in how many steps to do
+   // TODO find out how to doooo this. GP2-run, I assume, calls this program.
+   PTFI("int steps_to_run = 1;\n", 3);
+   PTFI("if (argc > 1) {\n", 3);
+   PTFI("steps_to_run = strtol(argv[1], NULL, 10);\n", 6);
+   PTFI("}\n", 3);
+
    PTFI("srand(time(NULL));\n", 3);
    PTFI("openLogFile(\"gp2.log\");\n", 3);
    #if defined GRAPH_TRACING || defined RULE_TRACING || defined BACKTRACK_TRACING
@@ -304,7 +328,7 @@ static const char *command_strings[] = {
 
 static void generateProgramCode(GPCommand *command, CommandData data)
 {
-   PTFI("// ~IMP1: Before %s (depth = %d).\n", 3, command_strings[command->type], ++depth);
+   PTFI("// ~IMP1: Before %s (depth = %d).\n", data.indent, command_strings[command->type], ++depth);
    // ~IMP1: TODO add the other leaf nodes to the following:
    bool leaf_node = command->type == RULE_CALL ||
                     command->type == RULE_SET_CALL; 
@@ -435,13 +459,13 @@ static void generateProgramCode(GPCommand *command, CommandData data)
    if (leaf_node) { 
       data.indent = data.indent - 3;
       PTFI("} // ~IMP1: </leaf node>\n", data.indent);
-      PTFI("current_step ++; // ~IMP1\n", data.indent);
-      PTFI("if (current_step == starting_step + steps_to_run) { // ~IMP1\n", data.indent);
-      PTFI("finalise(output_file); // ~IMP1\n", data.indent);
-      PTFI("return 0; // ~IMP1\n", data.indent);
-      PTFI("} // ~IMP1\n", data.indent);
+      PTFI("current_step ++;\n", data.indent);
+      PTFI("if (current_step == starting_step + steps_to_run) {\n", data.indent);
+      PTFI("finalise(output_file);\n", data.indent + 3);
+      PTFI("return 0;\n", data.indent + 3);
+      PTFI("}\n", data.indent);
    }
-   PTFI("// ~IMP1: After %s (depth = %d).\n", 3, command_strings[command->type], depth--); 
+   PTFI("// ~IMP1: After %s (depth = %d).\n", data.indent, command_strings[command->type], depth--); 
    // </IMP1>
 }
 
