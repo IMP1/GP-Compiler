@@ -243,9 +243,9 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("if (strcmp(option, \"-s\") == 0) {\n", 6);
    PTFI("char *ptr;\n", 9);
    PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 9);
-   PTFI("} else if (strcmp(option, \"-f\") == 0) {\n", 6);
-   PTFI("char *ptr;\n", 9);
-   PTFI("starting_step = strtol(value, &ptr, 10);\n", 9);
+//   PTFI("} else if (strcmp(option, \"-f\") == 0) {\n", 6);
+//   PTFI("char *ptr;\n", 9);
+//   PTFI("starting_step = strtol(value, &ptr, 10);\n", 9);
    PTFI("} else {\n", 6);
    PTFI("print_usage();\n", 9);
    PTFI("return 0;\n", 6);
