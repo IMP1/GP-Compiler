@@ -100,6 +100,17 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
      perror(main_file);
      exit(1);
    }
+   
+   // Clear the tracing step.
+   length = strlen(output_dir) + 11;
+   char trace_file[length];
+   strcpy(trace_file, output_dir);
+   strcat(trace_file, "/step.trace");
+   FILE *trace_fp = fopen(trace_file, "w");
+   if (trace_fp != NULL) {
+      fprintf(trace_fp, "0");
+   }
+   fclose(trace_fp);
 
    PTF("#include <time.h>\n");
    PTF("#include <stdio.h>\n"); // ~IMP1: for using PUTS for debugging.
@@ -135,7 +146,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTF("int *node_map = NULL;\n\n");
 
    /* Print the function that builds the host graph through the host graph parser. */
-   PTF("static Graph *buildHostGraph(void)\n");
+   PTF("static Graph *buildHostGraph(bool use_old_output)\n");
    PTF("{\n");
    if(host_file == NULL)
    {
@@ -144,7 +155,12 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       return;
    }
    
-   PTFI("yyin = fopen(\"%s\", \"r\");\n", 3, host_file);
+   // ~IMP: changing which graph is the input one.
+   PTFI("if (use_old_output) {\n", 3);
+   PTFI("yyin = fopen(\"gp2.output\", \"r\");\n", 6);
+   PTFI("} else {\n", 3);
+   PTFI("yyin = fopen(\"%s\", \"r\");\n", 6, host_file);
+   PTFI("}\n", 3);
    PTFI("if(yyin == NULL)\n", 3);
    PTFI("{\n", 3);
    PTFI("perror(\"%s\");\n", 6, host_file);
@@ -176,17 +192,25 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    
    PTF("void finalise(FILE *output_file)\n");
    PTF("{\n");
-   PTF("   FILE *fp = fopen(\"%s/step.trace\", \"w\");\n", output_dir);
-   PTF("   if (fp != NULL) {\n");
-   PTF("      fprintf(fp, \"%%d\\n\", current_step);\n");
-   PTF("      printf(\"Trace step saved to file step.trace\\n\");\n");
-   PTF("   }\n");
-   PTF("   fclose(fp);");
-   PTF("   printGraph(host, output_file);\n");
-   PTF("   printf(\"Output graph saved to file gp2.output\\n\");\n");
-   PTF("   garbageCollect();\n");
-   //PTF("   printf(\"Graph changes recorded: %%d\\n\", graph_change_count);\n");
-   PTF("   fclose(output_file);\n");
+   PTFI("FILE *fp = fopen(\"%s/step.trace\", \"w\");\n", 3, output_dir);
+   PTFI("if (fp != NULL) {\n", 3);
+   PTFI("fprintf(fp, \"%%d\\n\", current_step);\n", 6);
+   PTFI("printf(\"Trace step saved to file step.trace\\n\");\n", 6);
+   PTFI("}\n", 3);
+   PTFI("fclose(fp);\n", 3);
+   PTFI("printGraph(host, output_file);\n", 3);
+   PTFI("printf(\"Output graph saved to file gp2.output\\n\");\n", 3);
+   PTFI("garbageCollect();\n", 3);
+   //PTFI("printf(\"Graph changes recorded: %%d\\n\", graph_change_count);\n", 3);
+   PTFI("fclose(output_file);\n", 3);
+   PTF("}\n\n");
+   
+   PTF("void print_usage(void)\n");
+   PTF("{\n");
+   PTF("   printf(\"Usage:\\n\");\n");
+   PTF("   printf(\"GP2-run [-f from] [-s steps]\\n\");\n");
+   PTF("   printf(\"    steps: how many steps to perform.\\n\");\n");
+   PTF("   printf(\"    from: which step to begin at.\\n\");\n");
    PTF("}\n\n");
    
    PTF("bool success = true;\n\n");
@@ -194,9 +218,11 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    /* Open the runtime's main function and set up the execution environment. */
    PTF("int main(int argc, char *argv[])\n");
    PTF("{\n");
+   PTFI("current_step = 0;\n", 3);
+   PTFI("int steps_to_run = -1;\n", 3); // Default is all the steps
+   PTFI("int starting_step = 0;\n\n", 3); // Default is starting at the beginning.
    
    // Load current step
-   PTFI("int starting_step = 0;\n", 3);
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"r\");\n", 3, output_dir);
    PTFI("if (fp != NULL) {\n", 3);
    PTFI("char buff[16];\n", 6);
@@ -204,14 +230,36 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("fgets(buff, 16, fp);\n", 6);
    PTFI("starting_step = strtol(buff, &ptr, 10);\n", 6);
    PTFI("} else { printf(\"couldn't find step.trace\\n\"); }\n", 3);
-   PTFI("fclose(fp);", 3);
+   PTFI("fclose(fp);\n\n", 3);
    
-   // Read in how many steps to do
-   // TODO find out how to doooo this. GP2-run, I assume, calls this program.
-   PTFI("int steps_to_run = 1;\n", 3);
-   PTFI("if (argc > 1) {\n", 3);
-   PTFI("steps_to_run = strtol(argv[1], NULL, 10);\n", 6);
+   // Read in arguments.
+   PTFI("if (argc > 1 && argc %% 2 == 0) {\n", 3);
+   PTFI("print_usage();\n", 6);
+   PTFI("return 0;\n", 6);
+   PTFI("}\n\n", 3);
+   PTFI("while (argc > 1) {\n", 3);
+   PTFI("char *value = argv[--argc];\n", 6);
+   PTFI("char *option = argv[--argc];\n", 6);
+   PTFI("if (strcmp(option, \"-s\") == 0) {\n", 6);
+   PTFI("char *ptr;\n", 9);
+   PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 9);
+   PTFI("} else if (strcmp(option, \"-f\") == 0) {\n", 6);
+   PTFI("char *ptr;\n", 9);
+   PTFI("starting_step = strtol(value, &ptr, 10);\n", 9);
+   PTFI("} else {\n", 6);
+   PTFI("print_usage();\n", 9);
+   PTFI("return 0;\n", 6);
+   PTFI("}\n", 6);   
+   PTFI("}\n\n", 3);
+   
+   PTFI("if (steps_to_run == -1) {\n", 3);
+   PTFI("printf(\"Running all the steps\");\n", 6);
+   PTFI("} else if (steps_to_run == 1) {\n", 3);
+   PTFI("printf(\"Running 1 step\");\n", 6);
+   PTFI("} else {\n", 3);
+   PTFI("printf(\"Running %%d steps\", steps_to_run);\n", 6);
    PTFI("}\n", 3);
+   PTFI("printf(\" from %%d.\\n\", starting_step);\n\n", 3);
 
    PTFI("srand(time(NULL));\n", 3);
    PTFI("openLogFile(\"gp2.log\");\n", 3);
@@ -219,7 +267,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       PTFI("openTraceFile(\"gp2.trace\");\n", 3);
    #endif
 
-   PTFI("host = buildHostGraph();\n", 3);
+   PTFI("bool use_old_output = (starting_step > 0);\n", 3);
+   PTFI("host = buildHostGraph(use_old_output);\n", 3);
    PTFI("if(host == NULL)\n", 3);
    PTFI("{\n", 3);
    PTFI("fprintf(stderr, \"Error parsing host graph file. Execution aborted.\\n\");\n", 6);
@@ -253,6 +302,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       }
       iterator = iterator->next;
    }
+   PTF("   printf(\"All done.\\n\");");
    PTF("   finalise(output_file);\n");
    PTF("   return 0;\n");
    PTF("}\n\n");
@@ -333,9 +383,11 @@ static void generateProgramCode(GPCommand *command, CommandData data)
    bool leaf_node = command->type == RULE_CALL ||
                     command->type == RULE_SET_CALL; 
    if (leaf_node) {
-      PTFI("if (current_step >= starting_step) { // ~IMP1: <leaf node>\n", data.indent);
+//      PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", data.indent);
+      PTFI("bool run_this_step = ((steps_to_run == -1) || (current_step < starting_step + steps_to_run));\n", data.indent);
+      PTFI("if ((current_step >= starting_step) && run_this_step) { // ~IMP1: <leaf node>\n", data.indent);
       data.indent = data.indent + 3;
-      PTFI("printf(\"step %%d.\\n\", current_step);\n", data.indent);
+      PTFI("printf(\"<step %%d>\\n\", current_step);\n", data.indent);
    }
    switch(command->type)
    {
@@ -458,9 +510,9 @@ static void generateProgramCode(GPCommand *command, CommandData data)
    // <IMP1>
    if (leaf_node) { 
       data.indent = data.indent - 3;
-      PTFI("} // ~IMP1: </leaf node>\n", data.indent);
-      PTFI("current_step ++;\n", data.indent);
+      PTFI("} current_step ++;\n", data.indent);
       PTFI("if (current_step == starting_step + steps_to_run) {\n", data.indent);
+      PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", data.indent + 3);
       PTFI("finalise(output_file);\n", data.indent + 3);
       PTFI("return 0;\n", data.indent + 3);
       PTFI("}\n", data.indent);
