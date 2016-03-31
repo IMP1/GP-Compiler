@@ -304,6 +304,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       iterator = iterator->next;
    }
    PTF("   printf(\"All done.\\n\");");
+   PTF("   current_step = 0;");
    PTF("   finalise(output_file);\n");
    PTF("   return 0;\n");
    PTF("}\n\n");
