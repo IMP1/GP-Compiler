@@ -158,7 +158,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    // ~IMP: changing which graph is the input one.
    PTFI("if (use_old_output) {\n", 3);
    PTFI("yyin = fopen(\"gp2.output\", \"r\");\n", 6);
-   PTFI("} else {\n", 3);
+   PTFI("}\n", 3);
+   PTFI("if(yyin == NULL) {\n", 3);
    PTFI("yyin = fopen(\"%s\", \"r\");\n", 6, host_file);
    PTFI("}\n", 3);
    PTFI("if(yyin == NULL)\n", 3);
