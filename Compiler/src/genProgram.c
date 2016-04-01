@@ -189,7 +189,11 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("}\n", 3);
    PTF("}\n\n");
    
-   PTF("int current_step = 0;\n\n");
+   PTF("int steps_to_run;\n");
+   PTF("int starting_step;\n");
+   PTF("int step_size;\n"); // TODO have this allow for stepping through larger statements
+   PTF("bool include_match_step;\n");
+   PTF("int current_step;\n\n");
    
    PTF("void finalise(FILE *output_file)\n");
    PTF("{\n");
@@ -208,10 +212,10 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    
    PTF("void print_usage(void)\n");
    PTF("{\n");
-   PTF("   printf(\"Usage:\\n\");\n");
-   PTF("   printf(\"GP2-run [-f from] [-s steps]\\n\");\n");
-   PTF("   printf(\"    steps: how many steps to perform.\\n\");\n");
-   PTF("   printf(\"    from: which step to begin at.\\n\");\n");
+   PTF("   printf(\"GP2 Usage:\\n\");\n");
+   PTF("   printf(\"    GP2-run [-f from] [-s steps]\\n\");\n");
+   PTF("   printf(\"        steps: how many steps to perform.\\n\");\n");
+//   PTF("   printf(\"    from: which step to begin at.\\n\");\n");
    PTF("}\n\n");
    
    PTF("bool success = true;\n\n");
@@ -219,9 +223,13 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    /* Open the runtime's main function and set up the execution environment. */
    PTF("int main(int argc, char *argv[])\n");
    PTF("{\n");
+   
+   PTFI("steps_to_run = -1;\n", 3); // Default is all the steps
+   PTFI("starting_step = 0;\n", 3); // Default is starting at the beginning.
+   PTFI("step_size = 1;\n", 3);
+   PTFI("include_match_step = false;\n", 3);
    PTFI("current_step = 0;\n", 3);
-   PTFI("int steps_to_run = -1;\n", 3); // Default is all the steps
-   PTFI("int starting_step = 0;\n\n", 3); // Default is starting at the beginning.
+   
    
    // Load current step
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"r\");\n", 3, output_dir);
@@ -238,22 +246,31 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("print_usage();\n", 6);
    PTFI("return 0;\n", 6);
    PTFI("}\n\n", 3);
-   PTFI("while (argc > 1) {\n", 3);
-   PTFI("char *value = argv[--argc];\n", 6);
-   PTFI("char *option = argv[--argc];\n", 6);
-   PTFI("if (strcmp(option, \"-s\") == 0) {\n", 6);
-   PTFI("char *ptr;\n", 9);
-   PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 9);
-//   PTFI("} else if (strcmp(option, \"-f\") == 0) {\n", 6);
-//   PTFI("char *ptr;\n", 9);
-//   PTFI("starting_step = strtol(value, &ptr, 10);\n", 9);
-   PTFI("} else {\n", 6);
-   PTFI("print_usage();\n", 9);
-   PTFI("return 0;\n", 6);
-   PTFI("}\n", 6);   
-   PTFI("}\n\n", 3);
+   PTFI("{ // <for loop>\n", 3);
+   PTFI("int i = 1;\n", 6);
+   PTFI("while (i < argc) {\n", 6);
+   PTFI("char *option = argv[i++];\n", 9);
+   PTFI("if (strcmp(option, \"-s\") == 0) {\n", 9);
+   PTFI("char *value = argv[i++];\n", 12);
+   PTFI("char *ptr;\n", 12);
+   PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 12);
+   PTFI("} else if (strcmp(option, \"-ss\") == 0) {\n", 9);
+   PTFI("char *value = argv[i++];\n", 12);
+   PTFI("char *ptr;\n", 12);
+   PTFI("step_size = strtol(value, &ptr, 10);\n", 12);
+//   PTFI("} else if (strcmp(option, \"-f\") == 0) {\n", 9);
+//   PTFI("char *ptr;\n", 12);
+//   PTFI("starting_step = strtol(value, &ptr, 10);\n", 12);
+   PTFI("} else if (strcmp(option, \"-m\") == 0) {\n", 9);
+   PTFI("include_match_step = true;\n", 12);
+   PTFI("} else { \n", 9);
+   PTFI("print_usage();\n", 12);
+   PTFI("return 0;\n", 12);
+   PTFI("}\n", 9);
+   PTFI("}\n", 6);
+   PTFI("} // </for loop>\n\n", 3);
    
-   PTFI("if (steps_to_run == -1) {\n", 3);
+   PTFI("if (steps_to_run < 0) {\n", 3);
    PTFI("printf(\"Running all the steps\");\n", 6);
    PTFI("} else if (steps_to_run == 1) {\n", 3);
    PTFI("printf(\"Running 1 step\");\n", 6);
@@ -386,7 +403,7 @@ static void generateProgramCode(GPCommand *command, CommandData data)
                     command->type == RULE_SET_CALL; 
    if (leaf_node) {
 //      PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", data.indent);
-      PTFI("bool run_this_step = ((steps_to_run == -1) || (current_step < starting_step + steps_to_run));\n", data.indent);
+      PTFI("bool run_this_step = ((steps_to_run < 0) || (current_step < starting_step + steps_to_run));\n", data.indent);
       PTFI("if ((current_step >= starting_step) && run_this_step) { // ~IMP1: <leaf node>\n", data.indent);
       data.indent = data.indent + 3;
       PTFI("printf(\"<step %%d>\\n\", current_step);\n", data.indent);
