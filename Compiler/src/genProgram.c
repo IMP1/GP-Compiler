@@ -144,7 +144,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTF("Graph *host = NULL;\n");
    
    PTF("int *node_map = NULL;\n\n");
-
+   
    /* Print the function that builds the host graph through the host graph parser. */
    PTF("static Graph *buildHostGraph(bool use_old_output)\n");
    PTF("{\n");
@@ -197,6 +197,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    
    PTF("void finalise(FILE *output_file)\n");
    PTF("{\n");
+   PTFI("printf(\"finalising...\\n\");\n", 3);
+   PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", 3);
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"w\");\n", 3, output_dir);
    PTFI("if (fp != NULL) {\n", 3);
    PTFI("fprintf(fp, \"%%d\\n\", current_step);\n", 6);
@@ -213,8 +215,10 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTF("void print_usage(void)\n");
    PTF("{\n");
    PTF("   printf(\"GP2 Usage:\\n\");\n");
-   PTF("   printf(\"    GP2-run [-f from] [-s steps]\\n\");\n");
-   PTF("   printf(\"        steps: how many steps to perform.\\n\");\n");
+   PTF("   printf(\"    GP2-run [-s steps] [-b] [-m]\\n\");\n");
+   PTF("   printf(\"        -s: performs <steps> number of steps.\\n\");\n");
+   PTF("   printf(\"        -m: stops in between the match, and the execution of a rule.\\n\");\n");
+   PTF("   printf(\"        -b: starts from the beginning host graph.\\n\");\n");
 //   PTF("   printf(\"    from: which step to begin at.\\n\");\n");
    PTF("}\n\n");
    
@@ -250,11 +254,18 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("char *value = argv[i++];\n", 12);
    PTFI("char *ptr;\n", 12);
    PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 12);
+   PTFI("if (steps_to_run == 0) {\n", 12);
+   PTFI("print_usage();\n", 15);
+   PTFI("return 0;\n", 15);
+   PTFI("}\n", 12);
    // step size
-   PTFI("} else if (strcmp(option, \"-ss\") == 0) {\n", 9);
-   PTFI("char *value = argv[i++];\n", 12);
-   PTFI("char *ptr;\n", 12);
-   PTFI("step_size = strtol(value, &ptr, 10);\n", 12);
+//   PTFI("} else if (strcmp(option, \"-ss\") == 0) {\n", 9);
+//   PTFI("char *value = argv[i++];\n", 12);
+//   PTFI("char *ptr;\n", 12);
+//   PTFI("step_size = strtol(value, &ptr, 10);\n", 12);
+   // start from the beginning
+   PTFI("} else if (strcmp(option, \"-b\") == 0) {\n", 9);
+   PTFI("starting_step = 0;\n", 12);   
    // include rule match
    PTFI("} else if (strcmp(option, \"-m\") == 0) {\n", 9);
    PTFI("include_match_step = true;\n", 12);
@@ -265,7 +276,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("}\n", 6);
    PTFI("} // </for loop>\n\n", 3);
    
-   PTFI("if (steps_to_run < 0) {\n", 3);
+   PTFI("if (steps_to_run <= 0) {\n", 3);
    PTFI("printf(\"Running all the steps\");\n", 6);
    PTFI("} else if (steps_to_run == 1) {\n", 3);
    PTFI("printf(\"Running 1 step\");\n", 6);
@@ -273,6 +284,13 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("printf(\"Running %%d steps\", steps_to_run);\n", 6);
    PTFI("}\n", 3);
    PTFI("printf(\" from %%d.\\n\", starting_step);\n\n", 3);
+   
+   // TODO make -m -s 1 work
+   PTFI("if (starting_step %% 2 == 1) {\n", 3);
+   PTFI("starting_step -= 1;\n", 6);
+   PTFI("if (steps_to_run == 1) include_match_step = false;\n", 6);
+   PTFI("}\n", 3);
+   PTFI("steps_to_run *= 2;\n", 3);   
 
    PTFI("srand(time(NULL));\n", 3);
    PTFI("openLogFile(\"gp2.log\");\n", 3);
@@ -315,8 +333,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       }
       iterator = iterator->next;
    }
-   PTF("   printf(\"All done.\\n\");");
-   PTF("   current_step = 0;");
+   PTF("   printf(\"All done.\\n\");\n");
+   PTF("   current_step = 0;\n");
    PTF("   finalise(output_file);\n");
    PTF("   return 0;\n");
    PTF("}\n\n");
@@ -524,10 +542,8 @@ static void generateProgramCode(GPCommand *command, CommandData data)
    // <IMP1>
    if (leaf_node) { 
       data.indent = data.indent - 3;
-      PTFI("printf(\"\\n\");\n", data.indent);
-      PTFI("} current_step ++;\n", data.indent);
+      PTFI("} current_step += 2;\n", data.indent);
       PTFI("if (steps_to_run > 0 && current_step == starting_step + steps_to_run) {\n", data.indent);
-      PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", data.indent + 3);
       PTFI("finalise(output_file);\n", data.indent + 3);
       PTFI("return 0;\n", data.indent + 3);
       PTFI("}\n", data.indent);
@@ -587,13 +603,19 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
           * graph recording is on (signified by a restore_point >= 0). */
          if(data.context != IF_BODY || data.restore_point >= 0)
          { 
+            PTFI("printf(\"applying rule '%s'.\\n\");\n", data.indent + 3, rule_name);
+            PTFI("printf(\"start_step = %%d. end_step = %%d. current_step = %%d.\\n\", starting_step, starting_step + steps_to_run, current_step);\n", data.indent + 3);
             PTFI("bool only_match = include_match_step &&\n", data.indent + 3);
             PTFI("                  steps_to_run >= 0 &&\n", data.indent + 3);
-            PTFI("                  current_step == starting_step + steps_to_run - 1;\n", data.indent + 3);
+            PTFI("                  current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
             PTFI("if (only_match) {\n", data.indent + 3);
             PTFI("printf(\"Matched but not executing...\\n\");\n", data.indent + 6);
-            PTFI("}\n", data.indent + 3);
             // TODO add highlight labels to added stuff. :/
+            PTFI("current_step ++;\n", data.indent + 6);
+            PTFI("finalise(output_file);\n", data.indent + 6);
+            PTFI("return 0;\n", data.indent + 6);
+            PTFI("}\n", data.indent + 3);
+            
             if(data.record_changes && !graph_copying) {
                PTFI("apply%s(M_%s, true);\n", data.indent + 3, rule_name, rule_name);
             } else {
@@ -608,7 +630,6 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
          else PTFI("initialiseMorphism(M_%s, host);\n", data.indent + 3, rule_name);
       }
       PTFI("success = true;\n", data.indent + 3);
-      PTFI("printf(\"applying rule '%s'.\");\n", data.indent, rule_name);
       /* If this rule call is within a rule set, and it is not the last rule in that
        * set, print a break statement to exit the containing do-while loop of the rule
        * set call. */
