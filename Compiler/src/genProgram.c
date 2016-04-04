@@ -113,7 +113,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    fclose(trace_fp);
 
    PTF("#include <time.h>\n");
-   PTF("#include <stdio.h>\n"); // ~IMP1: for using PUTS for debugging.
+   PTF("#include <stdio.h>\n"); // ~IMP1: for using printf for debugging.
    PTF("#include \"debug.h\"\n");
    PTF("#include \"graph.h\"\n");
    PTF("#include \"graphStacks.h\"\n");
@@ -285,8 +285,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("}\n", 3);
    PTFI("printf(\" from %%d.\\n\", starting_step);\n\n", 3);
    
-   // TODO make -m -s 1 work
    PTFI("if (starting_step %% 2 == 1) {\n", 3);
+   // TODO remove match-related highlights from the graph.
    PTFI("starting_step -= 1;\n", 6);
    PTFI("if (steps_to_run == 1) include_match_step = false;\n", 6);
    PTFI("}\n", 3);
@@ -317,7 +317,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       PTFI("print_trace(\"Start Graph: \\n\");\n", 3);
       PTFI("printGraph(host, trace_file);\n\n", 3);
    #endif
- 
+   
    /* Print the calls to allocate memory for each morphism. */
    generateMorphismCode(declarations, 'm', true);
 
@@ -581,8 +581,11 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
          PTFI("printGraph(host, trace_file);\n\n", data.indent);
       #endif
       PTFI("success = true;\n\n", data.indent);
-      // TODO add highlight labels to added stuff. :/
+      // TODO add highlight labels to *new* stuff. :/
+      // TODO maybe make a method that handles this 
+      //     (gets passed the morphism and generates labels for added stuff).
       PTFI("printf(\"applying rule '%s'.\");\n", data.indent, rule_name);
+      PTFI("printf(\"highlighting new nodes and edges...\");\n", data.indent);
    }
    else
    {
@@ -608,13 +611,51 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
             PTFI("bool only_match = include_match_step &&\n", data.indent + 3);
             PTFI("                  steps_to_run >= 0 &&\n", data.indent + 3);
             PTFI("                  current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
+            
+            // If we're only finding matches and not applying the rule:
             PTFI("if (only_match) {\n", data.indent + 3);
             PTFI("printf(\"Matched but not executing...\\n\");\n", data.indent + 6);
-            // TODO add highlight labels to added stuff. :/
+            PTFI("printf(\"highlighting matched nodes and edges...\");\n", data.indent + 6);
+            // Highlight the matches.
+            PTFI("/*\n", data.indent + 6);
+            // TODO Fix the following:
+            // If the following highlighting code is uncommented, EITHER 
+            //          only one(?) step will run (if the initialiseMorphism is commented out)
+            // OR
+            //          a segmentation fault will occur (if it's not commented out)
+            // Neither of these are good.
+            PTFI("// Highlight all the matched nodes.\n", data.indent + 6);
+            PTFI("int rule_nodes = M_%s->nodes;\n", data.indent + 6, rule_name);
+            PTFI("int i;\n", data.indent + 6);
+            PTFI("for (i = 0; i < rule_nodes; i ++) {\n", data.indent + 6);
+            PTFI("int host_node_index = M_%s->node_map[i].host_index;\n", data.indent + 9, rule_name);
+            PTFI("printf(\"Node is %%d in the host graph.\\n\", host_node_index);\n", data.indent + 9);
+            PTFI("HostLabel current_label = getNodeLabel(host, host_node_index);\n", data.indent + 9);
+            PTFI("int current_list_length = current_label.length;\n", data.indent + 9);
+            PTFI("printf(\"current label length is %%d.\\n\", current_list_length);\n", data.indent + 9);
+            PTFI("int new_list_length = current_list_length + 1;\n", data.indent + 9);
+            PTFI("printf(\"new_list_length is %%d.\\n\", new_list_length);\n", data.indent + 9);
+            PTFI("HostAtom array[new_list_length];\n", data.indent + 9);
+            PTFI("array[new_list_length-1].type = 's';\n", data.indent + 9);
+            PTFI("array[new_list_length-1].str = \"<new_node>\";\n", data.indent + 9);
+            PTFI("printf(\"Set the new item.\\n\");\n", data.indent + 9);
+            PTFI("HostList *list = makeHostList(array, new_list_length, false);\n", data.indent + 9);
+            PTFI("printf(\"Made the new HostList.\\n\");\n", data.indent + 9);
+            PTFI("HostLabel new_label = makeHostLabel(0, new_list_length, list);\n", data.indent + 9);
+            PTFI("printf(\"Made the new HostLabel.\\n\");\n", data.indent + 9);
+            PTFI("relabelNode(host, host_node_index, new_label);\n", data.indent + 9);
+            PTFI("printf(\"Relabeled the HostLabel.\\n\");\n", data.indent + 9);
+            PTFI("}\n", data.indent + 6);
+            PTFI("printf(\"highlighted all the nodes.\");\n", data.indent + 6);
+            PTFI("// initialiseMorphism(M_%s, host); // Reset the morphism\n", data.indent + 6, rule_name);
+            PTFI("printf(\"Reset the morphism.\\n\");\n", data.indent + 6);
+            PTFI("// */\n", data.indent + 6);
+            
             PTFI("current_step ++;\n", data.indent + 6);
             PTFI("finalise(output_file);\n", data.indent + 6);
             PTFI("return 0;\n", data.indent + 6);
             PTFI("}\n", data.indent + 3);
+            PTFI("printf(\"Applying the rule...\\n\");\n", data.indent + 3);
             
             if(data.record_changes && !graph_copying) {
                PTFI("apply%s(M_%s, true);\n", data.indent + 3, rule_name, rule_name);
@@ -626,6 +667,13 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
                     data.indent + 3, rule_name);
                PTFI("printGraph(host, trace_file);\n\n", data.indent + 3);
             #endif
+            
+            // If we've applied the rule. (TODO add highlighting for new stuff)
+            PTFI("bool highlight_additions = steps_to_run > 0 &&\n", data.indent + 3);
+            PTFI("                           current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
+            PTFI("if (highlight_additions) {\n", data.indent + 3);
+            PTFI("printf(\"highlighting new nodes and edges...\");\n", data.indent + 6);
+            PTFI("}\n", data.indent + 3);
          }
          else PTFI("initialiseMorphism(M_%s, host);\n", data.indent + 3, rule_name);
       }
