@@ -221,8 +221,14 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    // Highlighting Stuff
    const string MATCHED_NODE = "<matched_node>";
    const string MATCHED_EDGE = "<matched_edge>";
-   const string ADDED_NODE = "<new_node>";
-   const string ADDED_EDGE = "<new_edge>";
+//   const string ADDED_NODE = "<new_node>";
+//   const string ADDED_EDGE = "<new_edge>";
+//   const string RELABLED_NODE = "<relabled_node>";
+//   const string RELABLED_EDGE = "<relabled_edge>";
+//   const string REMARKED_NODE = "<remarked_node>";
+//   const string REMARKED_EDGE = "<remarked_edge>";
+//   const string REMOVED_INCOMING_NODE = "<removed_in_node>";
+//   const string REMOVED_OUTGOING_NODE = "<removed_out_node>";
    
    PTF("void highlightMatches(Morphism morphism)\n");
    PTF("{\n");
@@ -366,6 +372,25 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    while(iterator != NULL)
    {
       GPDeclaration *decl = iterator->declaration;
+      
+      /* ~IMP1: TODO finding added/removed/changed nodes/edges
+         Rule *rule = transformRule(decl->rule);
+         decl->rule->empty_lhs = rule->lhs == NULL;
+         decl->rule->is_predicate = isPredicate(rule);
+         generateRuleCode(rule, decl->rule->is_predicate, output_dir);
+         freeRule(rule);
+         
+         TODO:
+         Find some way of accessing decl in the generated ruleCall code below.
+         Check the Rules' RHS and LHS to see if nodes/edges are added/removed.
+         Check the RuleNode of the RuleGraph of the Rule to see if labels/marks are edited.
+         
+         Check the RuleEdge of the RuleGraph of the Rule to see if labels/marks are edited.
+         If the edge is removed, do I wanna highlight the nodes if they still exist? I think so.
+         
+      */
+      
+      
       if(decl->type == MAIN_DECLARATION)
       {
          CommandData initialData = {MAIN_BODY, false, -1, 3};
@@ -615,7 +640,7 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
       PTFI("success = true;\n\n", data.indent);
       PTFI("printf(\"applying rule '%s'.\");\n", data.indent, rule_name); // ~IMP: debug (remove)
       PTFI("bool highlight_changes = steps_to_run > 0 &&\n", data.indent);
-      PTFI("                           current_step == starting_step + steps_to_run - 2;\n", data.indent);
+      PTFI("                         current_step == starting_step + steps_to_run - 2;\n", data.indent);
       PTFI("if (highlight_changes)\n", data.indent);
       PTFI("highlightChanges(*M_%s);\n", data.indent + 3, rule_name);
    }
