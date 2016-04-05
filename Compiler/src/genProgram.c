@@ -155,13 +155,10 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       return;
    }
    
-   // ~IMP: changing which graph is the input one.
-   PTFI("if (use_old_output) {\n", 3);
+   PTFI("if (use_old_output)\n", 3);
    PTFI("yyin = fopen(\"gp2.output\", \"r\");\n", 6);
-   PTFI("}\n", 3);
-   PTFI("if(yyin == NULL) {\n", 3);
+   PTFI("if(yyin == NULL)\n", 3);
    PTFI("yyin = fopen(\"%s\", \"r\");\n", 6, host_file);
-   PTFI("}\n", 3);
    PTFI("if(yyin == NULL)\n", 3);
    PTFI("{\n", 3);
    PTFI("perror(\"%s\");\n", 6, host_file);
@@ -199,7 +196,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("printf(\"finalising...\\n\");\n", 3); // ~IMP: debug (remove)
    PTFI("printf(\"start_step = %%d. current_step = %%d.\\n\", starting_step, current_step);\n", 3); // ~IMP: debug (remove)
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"w\");\n", 3, output_dir);
-   PTFI("if (fp != NULL) {\n", 3);
+   PTFI("if (fp != NULL)\n", 3);
+   PTFI("{\n", 3);
    PTFI("fprintf(fp, \"%%d\\n\", current_step);\n", 6);
    PTFI("printf(\"Trace step saved to file step.trace\\n\");\n", 6);
    PTFI("}\n", 3);
@@ -226,12 +224,6 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    const string ADDED_NODE = "<new_node>";
    const string ADDED_EDGE = "<new_edge>";
    
-   // TODO Fix the following:
-   // If the following highlighting code is uncommented, EITHER 
-   //          only one(?) step will run (if the initialiseMorphism is commented out)
-   // OR
-   //          a segmentation fault will occur (if it's not commented out)
-   // Neither of these are good.
    PTF("void highlightMatches(Morphism morphism)\n");
    PTF("{\n");
    // Highlight Nodes
@@ -268,6 +260,7 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTFI("printf(\"highlighted all the matches.\\n\");\n", 3); // ~IMP: debug (remove)
    PTF("}\n\n");
    
+   // ~IMP1: TODO Add highlighting of nodes and edges that are added.
    PTF("void highlightChanges(Morphism morphism)\n");
    PTF("{\n");
    
@@ -289,56 +282,50 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    
    // Load current step
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"r\");\n", 3, output_dir);
-   PTFI("if (fp != NULL) {\n", 3);
+   PTFI("if (fp != NULL)\n", 3);
+   PTFI("{\n", 3);
    PTFI("char buff[16];\n", 6);
    PTFI("char *ptr;\n", 6);
-   PTFI("fgets(buff, 16, fp);\n", 6);
-   PTFI("starting_step = strtol(buff, &ptr, 10);\n", 6);
+   PTFI("char *return_value = fgets(buff, 16, fp);\n", 6);
+   PTFI("if (return_value != NULL)\n", 6);
+   PTFI("{\n", 6);
+   PTFI("starting_step = strtol(buff, &ptr, 10);\n", 9);
+   PTFI("}\n", 6);
    PTFI("} else { printf(\"couldn't find step.trace\\n\"); }\n", 3);
    PTFI("fclose(fp);\n", 3);
    
    // Read in arguments.
-   PTFI("{ // <for loop>\n", 3);
-   PTFI("int i = 1;\n", 6);
-   PTFI("while (i < argc) {\n", 6);
-   PTFI("char *option = argv[i++];\n", 9);
+   PTFI("int i;\n", 3);
+   PTFI("for (i = 1; i < argc; i ++) {\n", 3);
+   PTFI("char *option = argv[i];\n", 6);
    // steps to do
-   PTFI("if (strcmp(option, \"-s\") == 0) {\n", 9);
-   PTFI("char *value = argv[i++];\n", 12);
-   PTFI("char *ptr;\n", 12);
-   PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 12);
-   PTFI("if (steps_to_run == 0) {\n", 12);
-   PTFI("print_usage();\n", 15);
-   PTFI("return 0;\n", 15);
-   PTFI("}\n", 12);
-   // step size
-//   PTFI("} else if (strcmp(option, \"-ss\") == 0) {\n", 9);
-//   PTFI("char *value = argv[i++];\n", 12);
-//   PTFI("char *ptr;\n", 12);
-//   PTFI("step_size = strtol(value, &ptr, 10);\n", 12);
-   // start from the beginning
-   PTFI("} else if (strcmp(option, \"-b\") == 0) {\n", 9);
-   PTFI("starting_step = 0;\n", 12);   
-   // include rule match
-   PTFI("} else if (strcmp(option, \"-m\") == 0) {\n", 9);
-   PTFI("include_match_step = true;\n", 12);
-   PTFI("} else { \n", 9);
+   PTFI("if (strcmp(option, \"-s\") == 0)\n", 6);
+   PTFI("{\n", 6);
+   PTFI("i ++;\n", 9);
+   PTFI("char *value = argv[i];\n", 9);
+   PTFI("char *ptr;\n", 9);
+   PTFI("steps_to_run = strtol(value, &ptr, 10);\n", 9);
+   PTFI("if (steps_to_run == 0)\n", 9);
+   PTFI("{\n", 9);
    PTFI("print_usage();\n", 12);
    PTFI("return 0;\n", 12);
    PTFI("}\n", 9);
+   // start from the beginning
    PTFI("}\n", 6);
-   PTFI("} // </for loop>\n\n", 3);
-   
-   PTFI("if (steps_to_run <= 0) {\n", 3);
-   PTFI("printf(\"Running all the steps\");\n", 6); // ~IMP: debug (remove)
-   PTFI("} else if (steps_to_run == 1) {\n", 3);
-   PTFI("printf(\"Running 1 step\");\n", 6); // ~IMP: debug (remove)
-   PTFI("} else {\n", 3);
-   PTFI("printf(\"Running %%d steps\", steps_to_run);\n", 6); // ~IMP: debug (remove)
+   PTFI("else if (strcmp(option, \"-b\") == 0)\n", 6);
+   PTFI("starting_step = 0;\n", 9);   
+   // include rule match
+   PTFI("else if (strcmp(option, \"-m\") == 0)\n", 6);
+   PTFI("include_match_step = true;\n", 9);
+   PTFI("else\n", 6);
+   PTFI("{\n", 6);
+   PTFI("print_usage();\n", 9);
+   PTFI("return 0;\n", 9);
+   PTFI("}\n", 6);
    PTFI("}\n", 3);
-   PTFI("printf(\" from %%d.\\n\", starting_step);\n\n", 3);
    
-   PTFI("if (starting_step %% 2 == 1) {\n", 3);
+   PTFI("if (starting_step %% 2 == 1)\n", 3);
+   PTFI("{\n", 3);
    // TODO remove match-related highlights from the graph.
    PTFI("starting_step -= 1;\n", 6);
    PTFI("if (steps_to_run == 1) include_match_step = false;\n", 6);
@@ -454,23 +441,15 @@ static void generateMorphismCode(List *declarations, char type, bool first_call)
    else if(first_call) PTF("}\n\n");
 }
 
-static int depth = 0; // ~IMP1: debugging depth of commands
-static const char *command_strings[] = {
-    "COMMAND_SEQUENCE", "RULE_CALL", "RULE_SET_CALL", "PROCEDURE_CALL",
-    "IF_STATEMENT", "TRY_STATEMENT", "ALAP_STATEMENT", "PROGRAM_OR", 
-    "SKIP_STATEMENT", "FAIL_STATEMENT", "BREAK_STATEMENT"
-}; // DEBUGGING which command depths are what
-
 static void generateProgramCode(GPCommand *command, CommandData data)
 {
-   PTFI("// ~IMP1: Before %s (depth = %d).\n", data.indent, command_strings[command->type], ++depth);
-   // ~IMP1: TODO add the other leaf nodes to the following:
    bool leaf_node = command->type == RULE_CALL ||
                     command->type == RULE_SET_CALL; 
    if (leaf_node) {
       PTFI("bool skip_this_step = current_step < starting_step;\n", data.indent);
       PTFI("bool run_this_step = ((steps_to_run <= 0) || (current_step < starting_step + steps_to_run));\n", data.indent);
-      PTFI("if (!skip_this_step && run_this_step) { // ~IMP1: <leaf node>\n", data.indent);
+      PTFI("if (!skip_this_step && run_this_step)\n", data.indent);
+      PTFI("{\n", data.indent);
       data.indent = data.indent + 3;
       PTFI("printf(\"<step %%03d> \", current_step);\n", data.indent); // ~IMP: debug (remove)
    }
@@ -596,12 +575,12 @@ static void generateProgramCode(GPCommand *command, CommandData data)
    if (leaf_node) { 
       data.indent = data.indent - 3;
       PTFI("} current_step += 2;\n", data.indent);
-      PTFI("if (steps_to_run > 0 && current_step == starting_step + steps_to_run) {\n", data.indent);
+      PTFI("if (steps_to_run > 0 && current_step == starting_step + steps_to_run)\n", data.indent);
+      PTFI("{\n", data.indent);
       PTFI("finalise(output_file);\n", data.indent + 3);
       PTFI("return 0;\n", data.indent + 3);
       PTFI("}\n", data.indent);
    }
-   PTFI("// ~IMP1: After %s (depth = %d).\n", data.indent, command_strings[command->type], depth--); 
    // </IMP1>
 }
 
@@ -637,9 +616,8 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
       PTFI("printf(\"applying rule '%s'.\");\n", data.indent, rule_name); // ~IMP: debug (remove)
       PTFI("bool highlight_changes = steps_to_run > 0 &&\n", data.indent);
       PTFI("                           current_step == starting_step + steps_to_run - 2;\n", data.indent);
-      PTFI("if (highlight_changes) {\n", data.indent);
+      PTFI("if (highlight_changes)\n", data.indent);
       PTFI("highlightChanges(*M_%s);\n", data.indent + 3, rule_name);
-      PTFI("}\n", data.indent + 3);
    }
    else
    {
@@ -667,12 +645,9 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
             PTFI("                  current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
             
             // If we're only finding matches and not applying the rule:
-            PTFI("if (only_match) {\n", data.indent + 3);
-            PTFI("printf(\"Matched but not executing...\\n\");\n", data.indent + 6); // ~IMP: debug (remove)
-            
-            // TODO Highlight the matches (call the method)
+            PTFI("if (only_match)\n", data.indent + 3);
+            PTFI("{\n", data.indent + 3);
             PTFI("highlightMatches(*M_%s);\n", data.indent + 6, rule_name);
-            
             PTFI("current_step ++;\n", data.indent + 6);
             PTFI("finalise(output_file);\n", data.indent + 6);
             PTFI("return 0;\n", data.indent + 6);
@@ -690,12 +665,10 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
                PTFI("printGraph(host, trace_file);\n\n", data.indent + 3);
             #endif
             
-            // If we've applied the rule. (TODO add highlighting for new stuff)
             PTFI("bool highlight_changes = steps_to_run > 0 &&\n", data.indent + 3);
             PTFI("                           current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
-            PTFI("if (highlight_changes) {\n", data.indent + 3);
+            PTFI("if (highlight_changes)\n", data.indent + 3);
             PTFI("highlightChanges(*M_%s);\n", data.indent + 6, rule_name);
-            PTFI("}\n", data.indent + 3);
          }
          else PTFI("initialiseMorphism(M_%s, host);\n", data.indent + 3, rule_name);
       }
