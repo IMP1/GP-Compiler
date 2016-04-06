@@ -111,6 +111,17 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       fprintf(trace_fp, "0");
    }
    fclose(trace_fp);
+   
+   // Clear the highlights
+   length = strlen(output_dir) + 16;
+   char highlight_file[length];
+   strcpy(highlight_file, output_dir);
+   strcat(highlight_file, "/highlight.trace");
+   FILE *highlight_fp = fopen(highlight_file, "w");
+   if (highlight_fp != NULL) {
+      fprintf(highlight_fp, "0 0");
+   }
+   fclose(highlight_fp);
 
    PTF("#include <time.h>\n");
    PTF("#include <stdio.h>\n"); // ~IMP1: for using printf for debugging.
@@ -219,60 +230,111 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    PTF("}\n\n");
    
    // Highlighting Stuff
-   const string MATCHED_NODE = "<matched_node>";
-   const string MATCHED_EDGE = "<matched_edge>";
-//   const string ADDED_NODE = "<new_node>";
-//   const string ADDED_EDGE = "<new_edge>";
-//   const string RELABLED_NODE = "<relabled_node>";
-//   const string RELABLED_EDGE = "<relabled_edge>";
-//   const string REMARKED_NODE = "<remarked_node>";
-//   const string REMARKED_EDGE = "<remarked_edge>";
-//   const string REMOVED_INCOMING_NODE = "<removed_in_node>";
-//   const string REMOVED_OUTGOING_NODE = "<removed_out_node>";
+   const string MATCHED_NODE = "__matched_node";
+   const string MATCHED_EDGE = "__matched_edge";
+   
+   PTF("void saveHighlights(int node_count, Highlight *nodes, int edge_count, Highlight *edges)\n");
+   PTF("{\n");
+   PTFI("printf(\"saving the highlights...\\n\");\n", 3); //~ IMP: debug (remove)
+   PTFI("FILE *fp = fopen(\"%s/highlight.trace\", \"w\");\n", 3, output_dir);
+   PTFI("if (fp != NULL)\n", 3);
+   PTFI("{\n", 3);
+   PTFI("fprintf(fp, \"%%d %%d\\n\", node_count, edge_count);\n", 6);
+   PTFI("int i;\n", 6);
+   PTFI("for (i = 0; i < node_count; i ++) {\n", 6);
+   PTFI("fprintf(fp, \"%%d %%s \", nodes[i].host_index, nodes[i].highlight);\n", 9);
+   PTFI("}\n", 6);
+   PTFI("fprintf(fp, \"\\n\");\n", 6);
+   PTFI("for (i = 0; i < edge_count; i ++) {\n", 6);
+   PTFI("fprintf(fp, \"%%d %%s \", edges[i].host_index, edges[i].highlight);\n", 9);
+   PTFI("}\n", 6);
+   PTFI("fprintf(fp, \"\\n\");\n", 6);
+   PTFI("}\n", 3);
+   PTFI("fclose(fp);\n", 3);
+   PTF("}\n\n");
+   
+   // Add highlight to a label
+   PTF("HostLabel addHighlight(HostLabel current_label, const string highlight)\n");
+   PTF("{\n");
+   PTFI("int new_list_length = current_label.length + 1;\n", 3);
+   PTFI("HostAtom array[new_list_length];\n", 3);
+   PTFI("array[new_list_length-1].type = 's';\n", 3);
+   PTFI("array[new_list_length-1].str = highlight;\n", 3);
+   PTFI("HostList *list = makeHostList(array, new_list_length, false);\n", 3);
+   PTFI("HostLabel new_label = makeHostLabel(current_label.mark, new_list_length, list);\n", 3);
+   PTFI("return new_label;\n", 3);
+   PTF("}\n\n");
+   
+   // Remove highlight from a label
+   PTF("HostLabel removeHighlight(HostLabel current_label, const string highlight)\n");
+   PTF("{\n");
+   PTFI("int new_list_length = current_label.length - 1;\n", 3);
+   PTFI("HostAtom array[new_list_length];\n", 3);
+   PTFI("HostList *list = makeHostList(array, new_list_length, false);\n", 3);
+   PTFI("HostLabel new_label = makeHostLabel(current_label.mark, new_list_length, list);\n", 3);
+   PTFI("return new_label;\n", 3);
+   PTF("}\n\n");
    
    PTF("void highlightMatches(Morphism morphism)\n");
    PTF("{\n");
    // Highlight Nodes
    PTFI("printf(\"highlighting matched nodes...\\n\");\n", 3); // ~IMP: debug (remove)
-   PTFI("int rule_nodes = morphism.nodes;\n", 3);
+   PTFI("const int rule_nodes = morphism.nodes;\n", 3);
+   PTFI("Highlight node_highlights[rule_nodes];\n", 3);
    PTFI("int i;\n", 3);
    PTFI("for (i = 0; i < rule_nodes; i ++) {\n", 3);
    PTFI("int host_node_index = morphism.node_map[i].host_index;\n", 6);
    PTFI("if (host_node_index == -1) return;\n", 6);
    PTFI("HostLabel current_label = getNodeLabel(host, host_node_index);\n", 6);
-   PTFI("int new_list_length = current_label.length + 1;\n", 6);
-   PTFI("HostAtom array[new_list_length];\n", 6);
-   PTFI("array[new_list_length-1].type = 's';\n", 6);
-   PTFI("array[new_list_length-1].str = \"%s\";\n", 6, MATCHED_NODE);
-   PTFI("HostList *list = makeHostList(array, new_list_length, false);\n", 6);
-   PTFI("HostLabel new_label = makeHostLabel(current_label.mark, new_list_length, list);\n", 6);
+   PTFI("HostLabel new_label = addHighlight(current_label, \"%s\");\n", 6, MATCHED_NODE);
    PTFI("relabelNode(host, host_node_index, new_label);\n", 6);
+   PTFI("node_highlights[i].host_index = host_node_index;\n", 6);
+   PTFI("node_highlights[i].highlight = \"%s\";\n", 6, MATCHED_NODE);
    PTFI("}\n", 3);
    // Highlight Edges
    PTFI("printf(\"highlighting matched edges...\\n\");\n", 3); // ~IMP: debug (remove)
-   PTFI("int rule_edges = morphism.edges;\n", 3);
+   PTFI("const int rule_edges = morphism.edges;\n", 3);
+   PTFI("Highlight edge_highlights[rule_edges];\n", 3);
    PTFI("for (i = 0; i < rule_edges; i ++) {\n", 3);
    PTFI("int host_edge_index = morphism.edge_map[i].host_index;\n", 6);
    PTFI("if (host_edge_index == -1) return;\n", 6);
    PTFI("HostLabel current_label = getEdgeLabel(host, host_edge_index);\n", 6);
-   PTFI("int new_list_length = current_label.length + 1;\n", 6);
-   PTFI("HostAtom array[new_list_length];\n", 6);
-   PTFI("array[new_list_length-1].type = 's';\n", 6);
-   PTFI("array[new_list_length-1].str = \"%s\";\n", 6, MATCHED_EDGE);
-   PTFI("HostList *list = makeHostList(array, new_list_length, false);\n", 6);
-   PTFI("HostLabel new_label = makeHostLabel(current_label.mark, new_list_length, list);\n", 6);
+   PTFI("HostLabel new_label = addHighlight(current_label, \"%s\");\n", 6, MATCHED_EDGE);
    PTFI("relabelEdge(host, host_edge_index, new_label);\n", 6);
+   PTFI("edge_highlights[i].host_index = host_edge_index;\n", 6);
+   PTFI("edge_highlights[i].highlight = \"%s\";\n", 6, MATCHED_EDGE);
    PTFI("}\n", 3);
    PTFI("printf(\"highlighted all the matches.\\n\");\n", 3); // ~IMP: debug (remove)
+   PTFI("saveHighlights(rule_nodes, node_highlights, rule_edges, edge_highlights);\n", 3);
    PTF("}\n\n");
    
    // ~IMP1: TODO Add highlighting of nodes and edges that are added.
-   PTF("void highlightChanges(Morphism morphism)\n");
+
+   PTF("void highlightChanges(int node_count, Highlight *nodes, int edge_count, Highlight *edges)\n");
    PTF("{\n");
+   PTFI("saveHighlights(node_count, nodes, edge_count, edges);\n", 3);
+   PTF("}\n\n");
+
    
-   PTFI("printf(\"Morphism has %%d nodes.\\n\", morphism.nodes);\n", 3); // ~IMP: debug (remove)
-   // Don't initialise the morphism, because if we're highlighting changes, 
-   // no more rule applications are going to be performed.
+   PTF("void removeHighlights()\n");
+   PTF("{\n");
+   PTFI("FILE *fp = fopen(\"%s/highlight.trace\", \"r\");\n", 3, output_dir);
+   PTFI("if (fp != NULL)", 3);
+   PTFI("{\n", 3);
+   PTFI("int node_count;\n", 6);
+   PTFI("int edge_count;\n", 6);
+   PTFI("if (fscanf(fp, \"%%d %%d\\n\", &node_count, &edge_count) < 2) return;\n", 6);
+   PTFI("int host_index;\n", 6);
+   PTFI("char highlight[32];\n", 6);
+   PTFI("printf(\"There are %%d nodes and %%d edges that are highlighted.\\n\", node_count, edge_count);\n", 6);
+   PTFI("int match_count = fscanf(fp, \"%%d %%[^ ] \", &host_index, highlight);\n", 6);
+   PTFI("printf(\"Match count == %%d.\\n\", match_count);\n", 6);
+   PTFI("while (fscanf(fp, \"%%d %%[^ ] \", &host_index, highlight) == 2) {\n", 6);
+   PTFI("printf(\"node %%d has highlight of %%s.\", host_index, highlight);\n", 9);
+   PTFI("}", 6);
+   PTFI("printf(\"read in highlighted nodes.\\n\");\n", 6);
+   PTFI("}\n", 3);
+   PTFI("fclose(fp);\n", 3);
    PTF("}\n\n");
    
    PTF("bool success = true;\n\n");
@@ -280,25 +342,26 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
    /* Open the runtime's main function and set up the execution environment. */
    PTF("int main(int argc, char *argv[])\n");
    PTF("{\n");
-   
+
    PTFI("steps_to_run = -1;\n", 3); // Default is all the steps
    PTFI("starting_step = 0;\n", 3); // Default is starting at the beginning.
    PTFI("include_match_step = false;\n", 3);
    PTFI("current_step = 0;\n\n", 3);
    
+   PTFI("removeHighlights();\n", 3);
    // Load current step
    PTFI("FILE *fp = fopen(\"%s/step.trace\", \"r\");\n", 3, output_dir);
    PTFI("if (fp != NULL)\n", 3);
    PTFI("{\n", 3);
    PTFI("char buff[16];\n", 6);
-   PTFI("char *ptr;\n", 6);
-   PTFI("char *return_value = fgets(buff, 16, fp);\n", 6);
-   PTFI("if (return_value != NULL)\n", 6);
-   PTFI("{\n", 6);
-   PTFI("starting_step = strtol(buff, &ptr, 10);\n", 9);
+   PTFI("if (fgets(buff, sizeof buff, fp) != NULL) {\n", 6);
+   PTFI("char *ptr;\n", 9);
+   PTFI("starting_step = strtol(buff, &ptr, 10);\n", 12);
    PTFI("}\n", 6);
-   PTFI("} else { printf(\"couldn't find step.trace\\n\"); }\n", 3);
-   PTFI("fclose(fp);\n", 3);
+   PTFI("printf(\"loaded step.trace\\n\");\n", 6);
+   PTFI("}\n", 3);
+   PTFI("else printf(\"couldn't find step.trace\\n\");\n", 3);
+   PTFI("fclose(fp);\n\n", 3);
    
    // Read in arguments.
    PTFI("int i;\n", 3);
@@ -374,6 +437,8 @@ void generateRuntimeMain(List *declarations, int host_nodes, int host_edges,
       GPDeclaration *decl = iterator->declaration;
       
       /* ~IMP1: TODO finding added/removed/changed nodes/edges
+         (when decl->type == RULE_DECLARATION)
+      
          Rule *rule = transformRule(decl->rule);
          decl->rule->empty_lhs = rule->lhs == NULL;
          decl->rule->is_predicate = isPredicate(rule);
@@ -642,7 +707,14 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
       PTFI("bool highlight_changes = steps_to_run > 0 &&\n", data.indent);
       PTFI("                         current_step == starting_step + steps_to_run - 2;\n", data.indent);
       PTFI("if (highlight_changes)\n", data.indent);
-      PTFI("highlightChanges(*M_%s);\n", data.indent + 3, rule_name);
+      PTFI("{\n", data.indent);
+      PTFI("int added_nodes = get%sAddedNodes();\n", data.indent + 3, rule_name);
+      PTFI("Highlight *node_highlights = get%sNodeHighlights();\n", data.indent + 3, rule_name);
+      PTFI("int added_edges = get%sAddedEdges();\n", data.indent + 3, rule_name);
+      PTFI("Highlight *edge_highlights = get%sEdgeHighlights();\n", data.indent + 3, rule_name);
+      PTFI("printf(\"!!! %%d nodes and %%d edges.\\n\", added_nodes, added_edges);\n", data.indent + 3);
+      PTFI("highlightChanges(added_nodes, node_highlights, added_edges, edge_highlights);\n", data.indent + 3);
+      PTFI("}\n", data.indent);
    }
    else
    {
@@ -693,7 +765,14 @@ static void generateRuleCall(string rule_name, bool empty_lhs, bool predicate,
             PTFI("bool highlight_changes = steps_to_run > 0 &&\n", data.indent + 3);
             PTFI("                           current_step == starting_step + steps_to_run - 2;\n", data.indent + 3);
             PTFI("if (highlight_changes)\n", data.indent + 3);
-            PTFI("highlightChanges(*M_%s);\n", data.indent + 6, rule_name);
+            PTFI("{\n", data.indent + 3);
+            PTFI("int added_nodes = get%sAddedNodes();\n", data.indent + 6, rule_name);
+            PTFI("Highlight *node_highlights = get%sNodeHighlights();\n", data.indent + 6, rule_name);
+            PTFI("int added_edges = get%sAddedEdges();\n", data.indent + 6, rule_name);
+            PTFI("Highlight *edge_highlights = get%sEdgeHighlights();\n", data.indent + 6, rule_name);
+            PTFI("printf(\"!!! %%d nodes and %%d edges.\\n\", added_nodes, added_edges);\n", data.indent + 6);
+            PTFI("highlightChanges(added_nodes, node_highlights, added_edges, edge_highlights);\n", data.indent + 6);
+            PTFI("}\n", data.indent + 3);
          }
          else PTFI("initialiseMorphism(M_%s, host);\n", data.indent + 3, rule_name);
       }
