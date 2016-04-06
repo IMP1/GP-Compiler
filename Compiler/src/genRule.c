@@ -68,6 +68,16 @@ void generateRules(List *declarations, string output_dir)
    }
 }
 
+   const string ADDED_NODE = "__new_node";
+   const string ADDED_EDGE = "__new_edge";
+//   const string RELABLED_NODE = "__relabled_node";
+//   const string RELABLED_EDGE = "__relabled_edge";
+//   const string REMARKED_NODE = "__remarked_node";
+//   const string REMARKED_EDGE = "__remarked_edge";
+//   const string REMOVED_INCOMING_NODE = "__removed_in_node";
+//   const string REMOVED_OUTGOING_NODE = "__removed_out_node";
+   
+
 /* Create a C module to match and apply the rule. */
 void generateRuleCode(Rule *rule, bool predicate, string output_dir)
 {
@@ -103,8 +113,48 @@ void generateRuleCode(Rule *rule, bool predicate, string output_dir)
        "#include \"label.h\"\n"
        "#include \"graphStacks.h\"\n"
        "#include \"hostParser.h\"\n"
-       "#include \"morphism.h\"\n\n");
+       "#include \"morphism.h\"\n\n");   
    PTF("#include \"%s.h\"\n\n", rule->name);
+  
+   // ~IMP1 
+   PTH("#ifndef HIGHLIGHT_STRUCT\n");
+   PTH("#define HIGHLIGHT_STRUCT\n\n");
+   PTH("typedef struct Highlight {\n");
+   PTH("   int host_index;\n");
+   PTH("   char* highlight;\n");
+   PTH("} Highlight;\n\n");
+   PTH("#endif\n\n");
+   
+   PTH("int get%sAddedNodes(void);\n", rule->name);
+   PTH("int get%sAddedEdges(void);\n", rule->name);
+   PTH("Highlight *get%sNodeHighlights(void);\n", rule->name);
+   PTH("Highlight *get%sEdgeHighlights(void);\n\n", rule->name);
+   
+   PTF("#include <stdio.h>\n"); // ~IMP debug TODO remove
+   PTF("static int added_node_count = 0;\n");
+   PTF("static Highlight *node_highlights;\n");
+   PTF("static int added_edge_count = 0;\n");
+   PTF("static Highlight *edge_highlights;\n\n");
+
+   PTF("int get%sAddedNodes(void)\n", rule->name);
+   PTF("{\n");
+   PTF("   return added_node_count;\n");
+   PTF("}\n");
+   
+   PTF("int get%sAddedEdges(void)\n", rule->name);
+   PTF("{\n");
+   PTF("   return added_edge_count;\n");
+   PTF("}\n");
+   
+   PTF("Highlight *get%sNodeHighlights(void)\n", rule->name);
+   PTF("{\n");
+   PTF("   return node_highlights;\n");
+   PTF("}\n");
+   
+   PTF("Highlight *get%sEdgeHighlights(void)\n", rule->name);
+   PTF("{\n");
+   PTF("   return edge_highlights;\n");
+   PTF("}\n");
 
    if(rule->condition != NULL)
    {
@@ -828,6 +878,9 @@ void generateApplicationCode(Rule *rule)
    PTH("void apply%s(Morphism *morphism, bool record_changes);\n", rule->name);
    PTF("void apply%s(Morphism *morphism, bool record_changes)\n", rule->name);
    PTF("{\n");
+   PTF("   added_node_count = 0;\n");
+   PTF("   added_edge_count = 0;\n\n");
+   
    /* Generate code to retrieve the values assigned to the variables in the
     * matching phase. */
    int index;
@@ -921,6 +974,7 @@ void generateApplicationCode(Rule *rule)
                PTFI("if(record_changes) pushRelabelledEdge(host_edge_index, label_e%d);\n",
                     6, index);
                PTFI("relabelEdge(host, host_edge_index, label);\n", 6);
+               PTFI("printf(\"Relabelling Edge! :)\\n\");\n", 6); // ~IMP: debug TODO remove
                PTFI("}\n", 3);
             }
             /* The else branch is entered when only the mark needs to change (not the list
@@ -989,6 +1043,7 @@ void generateApplicationCode(Rule *rule)
                PTFI("{\n", 3);
                PTFI("if(record_changes) pushRelabelledNode(host_node_index, label_n%d);\n",
                     6, index);
+               PTFI("printf(\"Relabelling Node! :)\\n\");\n", 6); // ~IMP: debug TODO remove
                PTFI("relabelNode(host, host_node_index, label);\n", 6);
                PTFI("}\n", 3);
             }
@@ -1042,6 +1097,7 @@ void generateApplicationCode(Rule *rule)
       PTFI("int rhs_node_map[%d];\n\n", 3, rule->rhs->node_index);
    }
    /* (3) Add nodes. */
+   PTFI("Highlight node_additions[%d];\n", 3, rule->rhs->node_index);
    for(index = 0; index < rule->rhs->node_index; index++)
    { 
       RuleNode *node = getRuleNode(rule->rhs, index);
@@ -1064,13 +1120,20 @@ void generateApplicationCode(Rule *rule)
          generateLabelEvaluationCode(node->label, true, list_count++, 0, 3);
          PTFI("host_node_index = addNode(host, %d, label);\n", 3, node->root);
       }
+      // ~IMP1
+      PTFI("added_node_count ++;\n", 3);
+      PTFI("node_additions[%d].host_index = host_node_index;\n", 3, index);
+      PTFI("node_additions[%d].highlight = \"%s\";\n", 3, index, ADDED_NODE);
+      PTFI("printf(\"Adding Node! :)\\n\");\n", 6); // ~IMP: debug TODO remove
       if(rule->adds_edges) PTFI("rhs_node_map[%d] = host_node_index;\n", 3, node->index);
       PTFI("/* If the node array size has not increased after the node addition, then\n", 3);
       PTFI("   the node was added to a hole in the array. */\n", 3);
       PTFI("if(record_changes)\n", 3);
       PTFI("pushAddedNode(host_node_index, node_array_size%d == host->nodes.size);\n", 6, index);
-   }   
+   }
+   PTFI("node_highlights = node_additions;\n", 3);
    /* (4) Add edges. */
+   PTFI("Highlight edge_additions[%d];\n", 3, rule->rhs->edge_index);
    bool source_target_declared = false;
    for(index = 0; index < rule->rhs->edge_index; index++)
    { 
@@ -1111,11 +1174,17 @@ void generateApplicationCode(Rule *rule)
          generateLabelEvaluationCode(edge->label, false, list_count++, 0, 3);
          PTFI("host_edge_index = addEdge(host, label, source, target);\n", 3);
       }
+      // ~IMP1
+      PTFI("added_edge_count ++;\n", 3);
+      PTFI("edge_additions[%d].host_index = host_edge_index;\n", 3, index);
+      PTFI("edge_additions[%d].highlight = \"%s\";\n", 3, index, ADDED_EDGE);
+      PTFI("printf(\"Adding Edge! :)\\n\");\n", 6); // ~IMP: debug TODO remove
       PTFI("/* If the edge array size has not increased after the edge addition, then\n", 3);
       PTFI("   the edge was added to a hole in the array. */\n", 3);
       PTFI("if(record_changes)\n", 3);
       PTFI("pushAddedEdge(host_edge_index, edge_array_size%d == host->edges.size);\n", 6, index);
    }
+   PTFI("edge_highlights = edge_additions;\n", 3);
    PTFI("/* Reset the morphism. */\n", 3);
    PTFI("initialiseMorphism(morphism, host);\n}\n\n", 3);
 }
